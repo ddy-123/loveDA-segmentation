@@ -1,0 +1,39 @@
+name: segformer_b2_color      # M2：M1 + 强颜色增强，验证颜色扰动对跨城泛化的作用
+model: segformer_b2
+pretrained: nvidia/segformer-b2-finetuned-ade-512-512
+num_classes: 7
+ignore_index: 255
+label_shift: true
+
+data:
+  root: data/raw/LoveDA
+  splits: data/splits
+
+train:
+  crop: 512
+  batch: 2
+  accum: 4
+  iters: 20000            # 等效 batch 8 x 20k = 16 万样本，与 DeepLabV3+ (batch 4 x 40k) 对齐
+  lr: 6.0e-5
+  weight_decay: 0.01
+  optimizer: adamw
+  scheduler: poly
+  power: 1.0
+  warmup_iters: 1500
+  amp: true
+  num_workers: 4
+  seed: 3407          # 与 M1 同种子，唯一变量就是颜色增强
+
+aug:
+  hflip: 0.5
+  vflip: 0.5
+  rot90: true
+  color_jitter: {brightness: 0.2, contrast: 0.2, saturation: 0.2, hue: 0.05}
+  scale_jitter: [0.75, 1.25]
+  use_color: true     # <-- 与 M1 唯一的差别
+
+eval:
+  crop: 512
+  stride: 256
+  val_interval: 2000
+  early_stop_patience: 8

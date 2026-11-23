@@ -1,0 +1,29 @@
+# rs_seg 依赖（Python 3.14 / Windows / 非 ASCII 路径 D:\study\数据智能）
+#
+# 装法：
+#   python -m venv .venv && .\.venv\Scripts\Activate.ps1
+#   python -m pip install -U pip
+#   pip install torch==2.11.0 torchvision==0.26.0 --index-url https://download.pytorch.org/whl/cu128
+#   pip install -r requirements.txt
+#
+# 必须 cu128：RTX 5060 是 Blackwell sm_120，cu118/cu124 的 wheel 里没有原生 kernel，
+# 只能靠 PTX JIT 顶着跑，实测单算子慢 100–500 倍（见报告“环境”一节）。
+# 完整锁定版本见 requirements.lock.txt。
+
+torch==2.11.0
+torchvision==0.26.0
+numpy==2.5.4
+pandas==3.1.1
+scikit-learn==1.9.1
+pillow==13.0.0
+opencv-python==5.0.0.93
+matplotlib==3.11.2
+tqdm==4.70.1
+pyyaml==6.0.3
+tensorboard==2.21.0
+transformers==5.23.0
+timm==1.0.31
+segmentation-models-pytorch==0.6.0
+huggingface-hub==2.4.0
+onnx==1.23.2
+onnxruntime-gpu==1.32.0

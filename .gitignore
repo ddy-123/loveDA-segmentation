@@ -1,0 +1,31 @@
+# 数据与权重（本仓库不含）
+data/
+outputs/ckpt/
+outputs/onnx/
+*.pth
+*.onnx
+*.npz
+*.npy
+
+# 环境
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.env
+
+# 缓存
+.cache/
+.cache*/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 运行产物
+outputs/logs/
+outputs/metrics/
+outputs/figures/
+outputs/tables/
