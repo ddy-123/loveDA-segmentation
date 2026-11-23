@@ -82,9 +82,9 @@ Maximum ONNX numerical deviation: 6.2e−4.
 
 ## Three design decisions worth a look
 
-1. **Label-scheme audit.** The dataset documentation states labels 0–6; the masks actually contain 0–7, where 0
-   is no-data. Every mask is remapped as `raw − 1` and 0 becomes `ignore_index`. Skipping this silently shifts
-   every class by one and invalidates the entire pipeline.
+1. **Split reality check.** The official test split ships 1,796 images and **zero** mask files. The "test set"
+   used here is therefore 835 tiles carved from the validation split, stratified by urban/rural, with `dev`
+   (834 tiles) kept strictly separate for model selection. Every reported number comes from a single pass.
 2. **Verifiable controls, not narrative.** The two arms differ in exactly one factor — enforced by an
    intersection assertion in the split script, enumerated sample-count and domain-composition checks, and a
    shared YAML for hyperparameters and seed.
