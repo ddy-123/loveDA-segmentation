@@ -1,141 +1,152 @@
-# 高分辨率影像语义分割与跨域泛化研究
+# LoveDA Semantic Segmentation & Cross-Domain Generalization
 
-基于 LoveDA 数据集的语义分割全流程实验：UNet / DeepLabV3+ / SegFormer-B2 三模型对比、**跨域泛化控制变量实验**、
-错误归因分析与 ONNX 部署测速，另附 RemoteCLIP 零样本与线性探针的对照评估。
+An end-to-end semantic segmentation study on the [LoveDA](https://github.com/Junjue-Wang/LoveDA) dataset:
+a three-model comparison (UNet / DeepLabV3+ / SegFormer-B2), a **controlled cross-domain generalization experiment**,
+bucket-wise error analysis, and ONNX deployment benchmarking. A RemoteCLIP zero-shot vs. linear-probe
+comparison is included as a multimodal baseline.
 
-> 单卡（RTX 5060 Laptop 8 GB）完成全部训练与评测。仓库只包含代码，**不含数据集与权重**。
-
----
-
-## 核心结论（一行版）
-
-同一批数据、同样的训练样本量，**只改划分方式**（随机划分 vs 跨城划分），test mIoU 从 0.6520 掉到 0.5331，
-**分布偏移代价 11.89 点**；且掉点高度不均匀——林地 −24.9、裸地 −23.8、农田 −18.9，而**建筑只掉 −1.4**。
+> Everything was trained and evaluated on a **single 8 GB laptop GPU**. This repository contains code only —
+> no datasets, no checkpoints.
 
 ---
 
-## 关键结果
+## Headline result
 
-### 模型对比（test 集 835 张，一次出数、不调参）
+Holding the model, the training set size (2,271 tiles), the urban/rural composition, the hyperparameters and the
+random seed constant, and changing **only the train/test split**, test mIoU drops from **0.6520 to 0.5331** —
+a **distribution-shift cost of 11.89 points**.
 
-| 实验 | mIoU | mIoU（不含背景） | 像素准确率 | Kappa |
+The damage is highly uneven: forest **−24.9**, barren **−23.8**, agriculture **−18.9**, but building only **−1.4**.
+Roof geometry and material transfer across cities; vegetation cover, bare-soil colour and phenology do not.
+
+---
+
+## Results
+
+### Model comparison (835 held-out tiles, single evaluation pass, no tuning)
+
+| Experiment | mIoU | mIoU (no background) | Pixel acc. | Kappa |
 |---|---|---|---|---|
-| UNet（ResNet34，从零训练） | 0.4287 | 0.4167 | 0.6338 | 0.4954 |
-| DeepLabV3+（ImageNet 预训练） | 0.5026 | 0.4978 | 0.6827 | 0.5705 |
-| SegFormer-B2（ADE20K 预训练） | 0.5211 | 0.5182 | 0.7068 | 0.6048 |
-| **SegFormer-B2 + 颜色增强** | **0.5465** | 0.5426 | 0.7286 | 0.6332 |
+| UNet (ResNet34, from scratch) | 0.4287 | 0.4167 | 0.6338 | 0.4954 |
+| DeepLabV3+ (ImageNet pre-trained) | 0.5026 | 0.4978 | 0.6827 | 0.5705 |
+| SegFormer-B2 (ADE20K pre-trained) | 0.5211 | 0.5182 | 0.7068 | 0.6048 |
+| **SegFormer-B2 + colour augmentation** | **0.5465** | 0.5426 | 0.7286 | 0.6332 |
 
-**归因**：预训练权重贡献 **+7.4 点**（UNet→DeepLabV3+），骨干结构差异 **+1.9 点**（DeepLabV3+→SegFormer），
-颜色增强 **+2.4 点**。在算力受限时，这个排序直接决定资源该花在哪。
+**Attribution:** pre-training contributes **+7.4 points**, backbone architecture only **+1.9**, colour augmentation
+**+2.4**. Under a fixed compute budget this ordering dictates where the effort should go.
 
-### 跨域泛化对照（M3）
+### Cross-domain control experiment
 
-两臂**同模型、同 2271 张训练量、同城乡构成、同超参与种子**，训练/测试交集断言为 0，唯一变量是划分方式：
-
-| 实验 | 训练 | 测试 | mIoU |
+| Arm | Train | Test | mIoU |
 |---|---|---|---|
-| 随机划分 | 2271 张 | 839 张（同分布） | **0.6520** |
-| 官方（跨城）划分 | 2271 张 | 1669 张（跨城） | **0.5331** |
+| Random split | 2,271 tiles | 839 tiles (i.i.d.) | **0.6520** |
+| Official (cross-city) split | 2,271 tiles | 1,669 tiles (cross-city) | **0.5331** |
 
-按类别拆开的掉点分布：
+Per-class degradation:
 
-| 类别 | 随机划分 | 跨城划分 | 掉点 |
+| Class | Random split | Cross-city | Δ |
 |---|---|---|---|
-| 林地 | 0.663 | 0.413 | **−24.9** |
-| 裸地 | 0.539 | 0.301 | **−23.8** |
-| 农田 | 0.739 | 0.550 | −18.9 |
-| 背景 | 0.612 | 0.553 | −5.9 |
-| 道路 | 0.617 | 0.572 | −4.5 |
-| 水体 | 0.751 | 0.714 | −3.8 |
-| 建筑 | 0.644 | 0.630 | **−1.4** |
+| Forest | 0.663 | 0.413 | **−24.9** |
+| Barren | 0.539 | 0.301 | **−23.8** |
+| Agriculture | 0.739 | 0.550 | −18.9 |
+| Background | 0.612 | 0.553 | −5.9 |
+| Road | 0.617 | 0.572 | −4.5 |
+| Water | 0.751 | 0.714 | −3.8 |
+| Building | 0.644 | 0.630 | **−1.4** |
 
-**解释**：屋顶的形状与材质跨城市稳定；植被覆盖度、裸土颜色、物候随气候与季节变化。
-颜色增强的增益正好集中在农田（+4.2）/ 背景（+3.8）/ 林地（+3.6）、建筑仅 +0.2，方向一致。
+Supporting evidence: colour augmentation gains concentrate on agriculture (+4.2), background (+3.8) and
+forest (+3.6) while building gains only +0.2 — consistent with the hypothesised appearance shift.
 
-### 多模态对照（RemoteCLIP，224 小块口径，macro-F1）
+### Multimodal baseline (RemoteCLIP, 224×224 patches, macro-F1)
 
-| 实验 | OA | macro-F1 | balanced acc |
+| Experiment | OA | macro-F1 | Balanced acc. |
 |---|---|---|---|
-| RemoteCLIP 零样本 | 0.6296 | 0.5690 | 0.6403 |
-| 线性探针（冻结编码器） | 0.7775 | **0.7792** | 0.7754 |
+| RemoteCLIP zero-shot | 0.6296 | 0.5690 | 0.6403 |
+| Linear probe (frozen encoder) | 0.7775 | **0.7792** | 0.7754 |
 
-5 种 prompt 模板消融波动仅 3.5 点 → 瓶颈不在措辞而在图文对齐。
-零样本在“其他地表”兜底类上召回为 **0**，原因是该类无视觉原型；换成线性分类器后立刻到 0.63。
+Five prompt templates vary by only 3.5 macro-F1 points, so the bottleneck is alignment rather than wording.
+Zero-shot recall on the "other surface" catch-all class is **0** — that class has no visual prototype; a linear
+classifier recovers it to 0.63, showing the image features do carry the information.
 
-### 部署（512 输入）
+### Deployment (512×512 input)
 
-| 实现 | 延迟 |
+| Implementation | Latency |
 |---|---|
 | PyTorch + CUDA | 21.9 ms |
 | ONNXRuntime CUDA | **21.4 ms** |
 | ONNXRuntime CPU | 593 ms |
 
-ONNX 导出最大数值误差 6.2e−4。
+Maximum ONNX numerical deviation: 6.2e−4.
 
 ---
 
-## 三个最值得看的设计
+## Three design decisions worth a look
 
-1. **标签体系纠错**：数据集文档称标签为 0–6，实际取值为 0–7（0 为 no-data）。
-   核对后统一做 `raw−1` 映射并将 0 置为 `ignore_index`，避免整条流水线类别错位——这是会导致所有指标作废的高危缺陷。
-2. **控制变量的可验证性**：M3 两臂的“只有一处不同”不是靠叙述保证的，而是划分脚本里带交集断言、
-   样本量与域构成枚举比对、超参与种子共用同一份 yaml。
-3. **选模与报数的纪律**：dev（834 张）只用于选模型，test（835 张）一次出数不再调参。
-   两者差 0.1–0.6 点，说明在 dev 上选模型没有过拟合。
+1. **Label-scheme audit.** The dataset documentation states labels 0–6; the masks actually contain 0–7, where 0
+   is no-data. Every mask is remapped as `raw − 1` and 0 becomes `ignore_index`. Skipping this silently shifts
+   every class by one and invalidates the entire pipeline.
+2. **Verifiable controls, not narrative.** The two arms differ in exactly one factor — enforced by an
+   intersection assertion in the split script, enumerated sample-count and domain-composition checks, and a
+   shared YAML for hyperparameters and seed.
+3. **Discipline in model selection.** `dev` (834 tiles) is used only to pick a model; `test` (835 tiles) is
+   evaluated once, with no tuning. The gap between them is 0.1–0.6 points, indicating no selection overfitting.
 
 ---
 
-## 目录结构
+## Repository layout
 
 ```
 src/
-  loveda.py          类别常量、原始标签映射
-  download.py        数据校验（张数逐格对齐 / md5 全量去重 / 尺寸检查）
-  splits.py          划分生成（含训练-测试交集断言）
-  splits_m3.py       M3 控制变量划分
-  quality.py         类别像素占比、no-data、重复图、跨域色调统计
-  eda.py             样例图墙、类别占比、共现矩阵
-  dataset.py         Dataset 与数据增强
-  models.py          UNet / DeepLabV3+ / SegFormer-B2 统一构建
-  train.py           训练循环（AMP、梯度累积、调度、断点续训、早停）
-  evaluate.py        滑窗推理与指标计算（mIoU / Kappa / 混淆矩阵）
-  error_analysis.py  边界距离分桶、面积分桶召回、Top-5 混淆对
-  noise_review.py    最大错误块人工复核表
-  clip_eval.py       RemoteCLIP 零样本 / 线性探针 / prompt 消融 / 检索
-  export_onnx.py     ONNX 导出与 ORT 测速
-configs/             各实验的超参配置
+  loveda.py          class constants and raw-label mapping
+  download.py        data audit (per-cell alignment, full md5 dedupe, size checks)
+  splits.py          split generation, with train/test intersection assertion
+  splits_m3.py       splits for the controlled experiment
+  quality.py         class pixel ratios, no-data statistics, duplicate detection, cross-city colour stats
+  eda.py             sample grids, class distribution, co-occurrence matrices
+  dataset.py         Dataset and augmentation pipeline
+  models.py          unified builders for UNet / DeepLabV3+ / SegFormer-B2
+  train.py           training loop (AMP, gradient accumulation, schedulers, resume, early stopping)
+  evaluate.py        sliding-window inference and metrics (mIoU / Kappa / confusion matrix)
+  error_analysis.py  boundary-distance bins, area-binned recall, top-5 confusion pairs
+  noise_review.py    human review sheets for the worst error blobs
+  clip_eval.py       RemoteCLIP zero-shot / linear probe / prompt ablation / retrieval
+  export_onnx.py     ONNX export and ONNXRuntime benchmarking
+configs/             per-experiment hyperparameter files
 ```
 
-## 快速开始
+## Quick start
 
 ```bash
 pip install -r requirements.txt
 
-# 1) 数据校验（需先把 LoveDA 放到 data/raw/LoveDA）
+# 1) data audit (place LoveDA under data/raw/LoveDA first)
 python -m src.download
 python -m src.splits
 python -m src.quality
 
-# 2) 训练
+# 2) train
 python -m src.train --config configs/segformer_b2.yaml
 
-# 3) 评测
+# 3) evaluate
 python -m src.evaluate --config configs/segformer_b2.yaml --split test
 
-# 4) 错误分析 / 部署
+# 4) error analysis / export
 python -m src.error_analysis
 python -m src.export_onnx --model segformer_b2 --ckpt <path>
 ```
 
-## 数据
+## Data
 
-[LoveDA](https://github.com/Junjue-Wang/LoveDA)（NeurIPS 2021 Datasets & Benchmarks），
-5987 张 1024×1024、0.3 m 分辨率，南京 / 武汉 / 常州，7 类地物。
-许可证 **CC BY-NC-SA 4.0**，仅用于学习研究；本仓库不包含数据与权重。
+[LoveDA](https://github.com/Junjue-Wang/LoveDA) (NeurIPS 2021 Datasets & Benchmarks): 5,987 tiles at
+1024×1024, 0.3 m resolution, covering Nanjing, Wuhan and Changzhou, 7 land-cover classes.
+Licensed **CC BY-NC-SA 4.0**, research use only. No data or weights are redistributed here.
 
-## 已知局限
+## Known limitations
 
-- 单卡 8 GB 限制 batch size，SegFormer 用 `batch 2 × accum 4` 等效 batch 8，未做多卡验证。
-- 官方 Test 集不提供标注，因此“测试集”实为 Val 按城乡分层切出的 835 张。
-- 颜色增强只能覆盖外观偏移的一个维度，跨域问题未真正解决（这是后续域适应工作的起点）。
-- 未做 INT8 量化与轻量骨干替换，CPU 推理仍是瓶颈（593 ms）。
+- An 8 GB card forces small batches; SegFormer runs at `batch 2 × accum 4` (effective batch 8). No multi-GPU
+  validation was performed.
+- The official test split ships images without annotations, so the "test set" here is 835 tiles carved from the
+  validation split, stratified by urban/rural.
+- Colour augmentation covers only one axis of the appearance shift. Domain adaptation is the natural next step
+  and is not implemented.
+- No INT8 quantisation and no lightweight backbone swap; CPU inference at 593 ms remains the bottleneck.
